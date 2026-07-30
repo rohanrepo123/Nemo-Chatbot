@@ -17,10 +17,10 @@ import sqlite3
 import os 
 load_dotenv()
 # llm = ChatOpenAI()
-# llm = ChatOllama(model ='nemotron-3-super:cloud')
-# llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
-llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
-llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
+llm = ChatOllama(model ='nemotron-3-super:cloud')
+llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
+# llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
+# llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
 
 # memory = InMemorySaver()
 connection = sqlite3.connect(database='Chatbot.db',check_same_thread=False)
@@ -40,7 +40,7 @@ def get_weather_data(city: str) -> str:
     """
     url = (
         f"https://api.weatherstack.com/current"
-        f"?access_key=660c8b79e01ca47ac35d47c884d74958&query={city}"
+        f"?access_key={os.environ['WEATHER_API']}&query={city}"
     )
 
     response = requests.get(url)
@@ -84,7 +84,7 @@ def get_stock_price(symbol: str) -> dict:
     """
     Fetch latest stock price of companies 
     """
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={os.environ['WEATHER_API']}"
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={os.environ['STOCK_API']}"
     x = requests.get(url)
     return x.json()
 
@@ -93,14 +93,14 @@ tools = [get_stock_price, search_tool, calculator,get_weather_data]
 llm_with_tools = llm.bind_tools(tools)
 tool_node = ToolNode(tools)
 def response(state: chat):
-    print('calling response.......')
+    # print('calling response.......')
     messages = state['messages']
     response =llm_with_tools.invoke(messages)
-    print(response.content)
+    # print(response.content)
     return {'messages': response}
 
 def generate_summary(state:chat):
-    print('First Execution.....')
+    # print('First Execution.....')
     messages = state['messages']
     prompt = "You are a helpful AI bot.Here the user starting a chat you have to create a small title for for new chat thread.her is the user input.\n" \
         f"{messages}"
@@ -111,7 +111,6 @@ def condition_forSum(state):
     if state.get('summary') is not None:
         return END
     return "summary"
-
 
 work= StateGraph(chat)
 work.add_node('response',response)

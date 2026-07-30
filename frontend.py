@@ -60,7 +60,7 @@ if st.sidebar.button("New chat"):
     reset_chat()
 
 st.sidebar.header("My Conversations")
-st.write("Hey there")
+st.write("Hey Pal You can talk to me My creator and God is Rohan")
 
 for thread_id in st.session_state['chat_thread']:
     if st.sidebar.button(str(find_title(thread_id))):
