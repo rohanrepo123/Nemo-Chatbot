@@ -1,10 +1,11 @@
 from langchain_openai import ChatOpenAI
-from typing import TypedDict,Literal,Annotated
+from typing import TypedDict,Literal,Annotated 
 from langchain_ollama import ChatOllama
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,SystemMessage
 import requests
+from langchain_core.messages import ToolMessage
 from langchain_community.tools import tool
 from langgraph.prebuilt import ToolNode, tools_condition
 from langchain_community.tools import DuckDuckGoSearchRun
@@ -16,8 +17,10 @@ import sqlite3
 import os 
 load_dotenv()
 # llm = ChatOpenAI()
-llm = ChatOllama(model ='nemotron-3-super:cloud')
-llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
+# llm = ChatOllama(model ='nemotron-3-super:cloud')
+# llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
+llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
+llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
 
 # memory = InMemorySaver()
 connection = sqlite3.connect(database='Chatbot.db',check_same_thread=False)
@@ -30,6 +33,19 @@ class chat(TypedDict):
 
 
 search_tool = DuckDuckGoSearchRun(region='us-en')
+@tool
+def get_weather_data(city: str) -> str:
+    """
+    Fetches the current weather of a city.
+    """
+    url = (
+        f"https://api.weatherstack.com/current"
+        f"?access_key=660c8b79e01ca47ac35d47c884d74958&query={city}"
+    )
+
+    response = requests.get(url)
+
+    return response.text
 @tool
 def calculator(first_num:float,second_num:float,operation:str)-> dict:
     """
@@ -68,14 +84,19 @@ def get_stock_price(symbol: str) -> dict:
     """
     Fetch latest stock price of companies 
     """
-    url = f'https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=IBM&apikey={os.environ['WEATHER_API']}'
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={os.environ['WEATHER_API']}"
     x = requests.get(url)
     return x.json()
 
+tools = [get_stock_price, search_tool, calculator,get_weather_data]
+
+llm_with_tools = llm.bind_tools(tools)
+tool_node = ToolNode(tools)
 def response(state: chat):
     print('calling response.......')
     messages = state['messages']
-    response =llm.invoke(messages)
+    response =llm_with_tools.invoke(messages)
+    print(response.content)
     return {'messages': response}
 
 def generate_summary(state:chat):
@@ -91,25 +112,28 @@ def condition_forSum(state):
         return END
     return "summary"
 
-work= StateGraph(chat)
 
+work= StateGraph(chat)
 work.add_node('response',response)
 work.add_node('summary',generate_summary)
-
+work.add_node('tools',tool_node)
 work.add_edge(START,'response')
+work.add_conditional_edges(
+    "response",
+    tools_condition,
+    {
+        "tools": "tools",
+        END: END,
+    },
+)
+
+work.add_edge("tools", "response")
 work.add_conditional_edges(START,condition_forSum,{'summary':'summary',END:END})
 work.add_edge('summary',END)
 work.add_edge('response',END)
 
 workflow = work.compile(checkpointer=memory)
 
-# config = {'configurable':{'thread_id':"2"}}   
-
-# for message_chunk, metadata in workflow.stream({'messages':"Give me a short lyrics of a song"},config=config,stream_mode='messages'):
-#     if message_chunk.content:
-#         print(message_chunk.content,end='',flush = True)
-# resp = workflow.invoke({'messages':"Who is the oldest man alive. Answer byu acknowledge by my name"},config=config)
-# print(resp)
 def retrieve_allThreads():
     x = set()   
     for i in memory.list(None):

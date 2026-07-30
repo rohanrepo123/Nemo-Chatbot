@@ -78,28 +78,63 @@ for thread_id in st.session_state['chat_thread']:
 
 for message in st.session_state['msg_hstry']:
     with st.chat_message(message['role']):
-        st.text(message['content'])
+        st.markdown(message['content'])
+        # st.text(message['content']) use markdown for prettier format
 
 ques = st.chat_input("Type it:")
 
 # Just need to add st.write_stream
 
 if ques:
-    # ques = str(input("You: \n"))
-    st.session_state['msg_hstry'] .append({'role':'user','content':ques})
-    with st.chat_message('user',avatar=USER_AVATAR):
-        st.write(ques)
-        st.snow()
-    config = {'configurable':{'thread_id':st.session_state['thread_id']}}
-    with st.status("Thinking...", expanded=True) as status:
-        # continue
-    # with st.status("Thinking...", expanded=True) as status:
-        # st.write("Sending request to LLM...")
-        with st.chat_message('assistant'):
-            ai_message = st.write_stream(
-            message_chunk.content for message_chunk , metadata in workflow.stream({'messages': [HumanMessage(content=ques)]}, config=config,stream_mode='messages')
-            )  #needs a generator to pass
-    st.balloons()
-    st.session_state['msg_hstry'] .append({'role':'assistant','content':ai_message})
-    st.rerun()         #rerun to show output
+    # Show user's message
+    st.session_state["msg_hstry"].append({"role": "user", "content":ques })
+    with st.chat_message("user"):
+        st.text(ques)
 
+    CONFIG = {
+        "configurable": {"thread_id": st.session_state["thread_id"]},
+        "metadata": {"thread_id": st.session_state["thread_id"]},
+        "run_name": "chat_turn",
+    }
+
+    # Assistant streaming block
+    with st.chat_message("assistant"):
+        # Use a mutable holder so the generator can set/modify it
+        status_holder = {"box": None}
+
+        def ai_only_stream():
+            for message_chunk, metadata in workflow.stream(
+                {"messages": [HumanMessage(content=ques)]},
+                config=CONFIG,
+                stream_mode="messages",
+            ):
+                # Lazily create & update the SAME status container when any tool runs
+                if isinstance(message_chunk, ToolMessage):
+                    tool_name = getattr(message_chunk, "name", "tool")
+                    if status_holder["box"] is None:
+                        status_holder["box"] = st.status(
+                            f"🔧 Using `{tool_name}` …", expanded=True
+                        )
+                    else:
+                        status_holder["box"].update(
+                            label=f"🔧 Using `{tool_name}` …",
+                            state="running",
+                            expanded=True,
+                        )
+
+                # Stream ONLY assistant tokens
+                if isinstance(message_chunk, AIMessage):
+                    yield message_chunk.content
+
+        ai_message = st.write_stream(ai_only_stream())
+
+        # Finalize only if a tool was actually used
+        if status_holder["box"] is not None:
+            status_holder["box"].update(
+                label="✅ Tool finished", state="complete", expanded=False
+            )
+
+    # Save assistant message
+    st.session_state["msg_hstry"].append(
+        {"role": "assistant", "content": ai_message}
+    )
