@@ -17,10 +17,10 @@ import sqlite3
 import os 
 load_dotenv()
 # llm = ChatOpenAI()
-llm = ChatOllama(model ='nemotron-3-super:cloud')
-llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
-# llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
-# llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
+# llm = ChatOllama(model ='nemotron-3-super:cloud')
+# llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
+llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
+llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
 
 # memory = InMemorySaver()
 connection = sqlite3.connect(database='Chatbot.db',check_same_thread=False)
