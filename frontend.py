@@ -8,6 +8,7 @@ import uuid
 BOT_AVATAR = "https://api.dicebear.com/10.x/bottts/svg?seed=AI"
 USER_AVATAR = "https://api.dicebear.com/9.x/fun-emoji/svg?seed=User"
 #******************************** Utility functions**************************************#
+
 def generate_thread():
     thread_id = uuid.uuid4()
     return thread_id
@@ -29,7 +30,14 @@ def load_chat(thread_id):
     state = workflow.get_state(config)
     # print(thread_id)
     return state.values.get('messages',[])
-    
+
+def find_title(thread_id):
+    config = {"configurable": {"thread_id": thread_id}}
+    state = workflow.get_state(config)
+    if len(state.values):
+        return state[0]['summary'].content
+    else:
+        return "New Chat"
     # return message
 
 if 'msg_hstry' not in st.session_state:
@@ -55,7 +63,7 @@ st.sidebar.header("My Conversations")
 st.write("Hey there")
 
 for thread_id in st.session_state['chat_thread']:
-    if st.sidebar.button(str(thread_id)):
+    if st.sidebar.button(str(find_title(thread_id))):
         st.session_state['thread_id'] = thread_id
         message = load_chat(thread_id)
         temp_message = []
@@ -72,9 +80,9 @@ for message in st.session_state['msg_hstry']:
     with st.chat_message(message['role']):
         st.text(message['content'])
 
+ques = st.chat_input("Type it:")
 
 # Just need to add st.write_stream
-ques = st.chat_input("Type it")
 
 if ques:
     # ques = str(input("You: \n"))
@@ -93,4 +101,5 @@ if ques:
             )  #needs a generator to pass
     st.balloons()
     st.session_state['msg_hstry'] .append({'role':'assistant','content':ai_message})
+    st.rerun()         #rerun to show output
 
