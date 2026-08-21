@@ -187,7 +187,6 @@ rich==14.3.3
 rpds-py==0.30.0
 scikit-learn==1.6.1
 scipy==1.17.1
-semantic-chunker-langchain==0.1.4
 shellingham==1.5.4
 six==1.17.0
 smmap==5.0.3
