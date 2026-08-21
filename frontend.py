@@ -1,5 +1,5 @@
 import uuid
-
+from langchain_core.messages import HumanMessage,SystemMessage
 import streamlit as st
 
 from langchain_core.messages import (
@@ -487,6 +487,10 @@ if ques:
 
                 {
                     "messages": [
+                        SystemMessage(content="You are a helpful AI assitant powered by some tools use the tools when you thing required." \
+                        "Also there is a web search tool 'search_tool' use it when you have no knowledge or not updated with that knowledge" \
+                        "It is Aug 2026 when user is using you if there is something between your laswt training date and current date use web search of it" \
+                        "like who won fifa 2026, ICC cup 2024,etc"),
                         HumanMessage(content=ques)
                     ]
                 },
