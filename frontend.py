@@ -1,5 +1,5 @@
 import uuid
-from langchain_core.messages import HumanMessage,SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 import streamlit as st
 
 from langchain_core.messages import (
@@ -37,6 +37,21 @@ BOT_AVATAR = (
 USER_AVATAR = (
     "https://api.dicebear.com/9.x/"
     "fun-emoji/svg?seed=User"
+)
+
+
+# ============================================================
+# SYSTEM PROMPT (seeded once per thread, not every turn)
+# ============================================================
+
+SYSTEM_PROMPT = (
+    "You are a helpful AI assistant powered by some tools. "
+    "Use the tools when you think it's required. "
+    "There is also a web search tool 'search_tool' — use it when "
+    "you have no knowledge of something or aren't up to date on it. "
+    "It is Aug 2026 when the user is using you; if something "
+    "happened between your last training date and the current date, "
+    "use web search for it (e.g. who won FIFA 2026, ICC Cup 2024, etc)."
 )
 
 
@@ -85,6 +100,30 @@ def load_chat(thread_id):
     return state.values.get(
         "messages",
         []
+    )
+
+
+# ============================================================
+# THREAD HAS HISTORY?
+# ============================================================
+
+def thread_has_messages(thread_id):
+    """
+    True if this thread already has at least one message
+    checkpointed in the DB. Used to decide whether the system
+    prompt still needs to be seeded.
+    """
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    state = workflow.get_state(config)
+
+    return bool(
+        state.values.get("messages")
     )
 
 
@@ -368,7 +407,7 @@ st.caption(
 for message in st.session_state["msg_hstry"]:
 
     with st.chat_message(
-        message["role"]
+        message["role"],avatar=f"{USER_AVATAR if message['role']=='user' else BOT_AVATAR }"
     ):
 
         st.markdown(
@@ -381,7 +420,7 @@ for message in st.session_state["msg_hstry"]:
 # ============================================================
 
 ques = st.chat_input(
-    "Type your message..."
+    "Type your message...",
 )
 
 
@@ -459,6 +498,28 @@ if ques:
 
 
     # ========================================================
+    # BUILD INPUT MESSAGES FOR THIS TURN
+    # ========================================================
+    # Only seed the system prompt the FIRST time this thread is
+    # used. On every later turn the thread already has it in its
+    # checkpointed history, so we just send the new human message.
+    # ========================================================
+
+    if thread_has_messages(current_thread):
+
+        turn_messages = [
+            HumanMessage(content=ques)
+        ]
+
+    else:
+
+        turn_messages = [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=ques)
+        ]
+
+
+    # ========================================================
     # ASSISTANT
     # ========================================================
 
@@ -486,13 +547,7 @@ if ques:
             for message_chunk, metadata in workflow.stream(
 
                 {
-                    "messages": [
-                        SystemMessage(content="You are a helpful AI assitant powered by some tools use the tools when you thing required." \
-                        "Also there is a web search tool 'search_tool' use it when you have no knowledge or not updated with that knowledge" \
-                        "It is Aug 2026 when user is using you if there is something between your laswt training date and current date use web search of it" \
-                        "like who won fifa 2026, ICC cup 2024,etc"),
-                        HumanMessage(content=ques)
-                    ]
+                    "messages": turn_messages
                 },
 
                 config=CONFIG,
