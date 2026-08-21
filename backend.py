@@ -5,6 +5,7 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,SystemMessage
 import requests
+from langchain_openrouter  import ChatOpenRouter
 from langchain_core.messages import ToolMessage
 from langchain_community.tools import tool
 from langgraph.prebuilt import ToolNode, tools_condition
@@ -17,8 +18,11 @@ import sqlite3
 import os 
 load_dotenv()
 # llm = ChatOpenAI()
-llm = ChatOllama(model ='nemotron-3-super:cloud')
-llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
+# llm = ChatOllama(model ='nemotron-3-super:cloud')
+# llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
+llm = ChatOpenRouter(model ='nemotron-nano-9b-v2:free',temperature=.4,api_key=os.environ['OPENROUTER_API_KEY'])
+llm2 = ChatOpenRouter(model ="openai/gpt-oss-20b:free",temperature=1,api_key=os.environ['OPENROUTER_API_KEY'])
+
 # llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
 # llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
 
@@ -86,12 +90,14 @@ def get_stock_price(symbol: str) -> dict:
     """
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={os.environ['STOCK_API']}"
     x = requests.get(url)
+    print("I'm nvidia")
     return x.json()
 
 tools = [get_stock_price, search_tool, calculator,get_weather_data]
 
 llm_with_tools = llm.bind_tools(tools)
 tool_node = ToolNode(tools)
+
 def response(state: chat):
     # print('calling response.......')
     messages = state['messages']
