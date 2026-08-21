@@ -1,140 +1,627 @@
-import streamlit as st
-from backend import * 
 import uuid
 
-# msg_hstry =[]
-# USER_AVATAR = "https://api.dicebear.com/10.x/adventurer/svg?seed=Rohan"
+import streamlit as st
 
-BOT_AVATAR = "https://api.dicebear.com/10.x/bottts/svg?seed=AI"
-USER_AVATAR = "https://api.dicebear.com/9.x/fun-emoji/svg?seed=User"
-#******************************** Utility functions**************************************#
+from langchain_core.messages import (
+    HumanMessage,
+    AIMessage,
+    ToolMessage
+)
+
+from backend import (
+    workflow,
+    retrieve_allThreads
+)
+
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
+
+st.set_page_config(
+    page_title="ChatGPT",
+    page_icon="🤖",
+    layout="wide"
+)
+
+
+# ============================================================
+# AVATARS
+# ============================================================
+
+BOT_AVATAR = (
+    "https://api.dicebear.com/10.x/"
+    "bottts/svg?seed=AI"
+)
+
+USER_AVATAR = (
+    "https://api.dicebear.com/9.x/"
+    "fun-emoji/svg?seed=User"
+)
+
+
+# ============================================================
+# THREAD FUNCTIONS
+# ============================================================
 
 def generate_thread():
-    thread_id = uuid.uuid4()
-    return thread_id
-# print(generate_thread())
+    return str(uuid.uuid4())
 
-def reset_chat():
-    thread_id = generate_thread()
-    st.session_state['thread_id'] = thread_id
-    add_thread(st.session_state['thread_id'])
-    st.session_state['msg_hstry'] = []
 
 def add_thread(thread_id):
-    if thread_id not in st.session_state['chat_thread']:
-        st.session_state['chat_thread'].append(thread_id)
+
+    if thread_id not in st.session_state["chat_thread"]:
+
+        st.session_state["chat_thread"].append(
+            thread_id
+        )
+
+
+def reset_chat():
+
+    # Create a new temporary thread
+    thread_id = generate_thread()
+
+    st.session_state["thread_id"] = thread_id
+
+    # Empty chat
+    st.session_state["msg_hstry"] = []
+
+
+# ============================================================
+# LOAD CHAT
+# ============================================================
 
 def load_chat(thread_id):
-    config = {"configurable": {"thread_id": thread_id}}
-    # try:
-    state = workflow.get_state(config)
-    # print(thread_id)
-    return state.values.get('messages',[])
 
-def find_title(thread_id):
-    config = {"configurable": {"thread_id": thread_id}}
-    state = workflow.get_state(config)
-    if len(state.values):
-        return state[0]['summary'].content
-    else:
-        return "New Chat"
-    # return message
-
-if 'msg_hstry' not in st.session_state:
-    st.session_state['msg_hstry'] = [] 
-
-if 'thread_id' not in st.session_state:
-    st.session_state['thread_id'] = generate_thread()
-
-# if 'chat_thread' not in st.session_state:
-#     st.session_state['chat_thread'] = []
-# Now we have database
-if 'chat_thread' not in st.session_state:
-    st.session_state['chat_thread'] = retrieve_allThreads()
-    # print(retrieve_allThreads)
-
-add_thread(st.session_state['thread_id'])
-
-st.sidebar.title("ChatGpt")
-if st.sidebar.button("New chat"):
-    reset_chat()
-
-st.sidebar.header("My Conversations")
-st.write("Hey Pal You can talk to me My creator and God is Rohan")
-
-for thread_id in st.session_state['chat_thread']:
-    if st.sidebar.button(str(find_title(thread_id))):
-        st.session_state['thread_id'] = thread_id
-        message = load_chat(thread_id)
-        temp_message = []
-        for msg in message:
-            if isinstance(msg,HumanMessage):
-                role='user'
-            else:
-                role = 'assistant'
-            temp_message.append({'role':role,'content':msg.content})
-        st.session_state['msg_hstry'] = temp_message
-#loading history shown
-
-for message in st.session_state['msg_hstry']:
-    with st.chat_message(message['role']):
-        st.markdown(message['content'])
-        # st.text(message['content']) use markdown for prettier format
-
-ques = st.chat_input("Type it:")
-
-# Just need to add st.write_stream
-
-if ques:
-    # Show user's message
-    st.session_state["msg_hstry"].append({"role": "user", "content":ques })
-    with st.chat_message("user"):
-        st.text(ques)
-
-    CONFIG = {
-        "configurable": {"thread_id": st.session_state["thread_id"]},
-        "metadata": {"thread_id": st.session_state["thread_id"]},
-        "run_name": "chat_turn",
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
     }
 
-    # Assistant streaming block
-    with st.chat_message("assistant"):
-        # Use a mutable holder so the generator can set/modify it
-        status_holder = {"box": None}
+    state = workflow.get_state(config)
+
+    return state.values.get(
+        "messages",
+        []
+    )
+
+
+# ============================================================
+# FIND TITLE
+# ============================================================
+
+def find_title(thread_id):
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id
+        }
+    }
+
+    state = workflow.get_state(config)
+
+    values = state.values
+
+    # --------------------------------------------------------
+    # Stored summary
+    # --------------------------------------------------------
+
+    summary = values.get("summary")
+
+    if summary:
+
+        return str(summary).strip()
+
+
+    # --------------------------------------------------------
+    # Fallback for old conversations
+    # --------------------------------------------------------
+
+    messages = values.get(
+        "messages",
+        []
+    )
+
+    for message in messages:
+
+        if isinstance(
+            message,
+            HumanMessage
+        ):
+
+            text = message.content.strip()
+
+            if len(text) > 30:
+
+                text = text[:30] + "..."
+
+            return text
+
+    return "New Chat"
+
+
+# ============================================================
+# CONVERT DATABASE MESSAGES
+# ============================================================
+
+def convert_messages_to_history(
+    messages,
+    summary=None
+):
+
+    temp_message = []
+
+    summary_text = (
+        str(summary).strip()
+        if summary
+        else None
+    )
+
+    for message in messages:
+
+        # ====================================================
+        # USER MESSAGE
+        # ====================================================
+
+        if isinstance(
+            message,
+            HumanMessage
+        ):
+
+            temp_message.append({
+
+                "role": "user",
+
+                "content":
+                    message.content
+
+            })
+
+
+        # ====================================================
+        # AI MESSAGE
+        # ====================================================
+
+        elif isinstance(
+            message,
+            AIMessage
+        ):
+
+            # Ignore tool-call messages
+            if message.tool_calls:
+
+                continue
+
+            # Ignore empty AI messages
+            if not message.content:
+
+                continue
+
+            # Ignore old title/summary messages
+            if (
+                summary_text
+                and
+                message.content.strip()
+                == summary_text
+            ):
+
+                continue
+
+            temp_message.append({
+
+                "role": "assistant",
+
+                "content":
+                    message.content
+
+            })
+
+
+        # ====================================================
+        # TOOL MESSAGE
+        # ====================================================
+
+        elif isinstance(
+            message,
+            ToolMessage
+        ):
+
+            # Don't display raw tool output
+            continue
+
+
+    return temp_message
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+if "msg_hstry" not in st.session_state:
+
+    st.session_state["msg_hstry"] = []
+
+
+if "thread_id" not in st.session_state:
+
+    st.session_state["thread_id"] = generate_thread()
+
+
+if "chat_thread" not in st.session_state:
+
+    st.session_state["chat_thread"] = (
+        retrieve_allThreads()
+    )
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.title(
+    "🤖 ChatGPT"
+)
+
+
+# ============================================================
+# NEW CHAT
+# ============================================================
+
+if st.sidebar.button(
+    "➕ New chat",
+    use_container_width=True
+):
+
+    reset_chat()
+
+    st.rerun()
+
+
+st.sidebar.header(
+    "My Conversations"
+)
+
+
+# ============================================================
+# CONVERSATION LIST
+# ============================================================
+
+for thread_id in st.session_state["chat_thread"]:
+
+    title = find_title(
+        thread_id
+    )
+
+    if st.sidebar.button(
+
+        title,
+
+        key=f"thread_{thread_id}",
+
+        use_container_width=True
+
+    ):
+
+        st.session_state["thread_id"] = (
+            thread_id
+        )
+
+        # -----------------------------------------------
+        # Get database state
+        # -----------------------------------------------
+
+        config = {
+            "configurable": {
+                "thread_id": thread_id
+            }
+        }
+
+        state = workflow.get_state(
+            config
+        )
+
+        messages = state.values.get(
+            "messages",
+            []
+        )
+
+        summary = state.values.get(
+            "summary"
+        )
+
+        # -----------------------------------------------
+        # Load conversation
+        # -----------------------------------------------
+
+        st.session_state[
+            "msg_hstry"
+        ] = convert_messages_to_history(
+
+            messages,
+
+            summary
+
+        )
+
+        st.rerun()
+
+
+# ============================================================
+# MAIN PAGE
+# ============================================================
+
+st.title(
+    "🤖 My AI Assistant"
+)
+
+st.caption(
+    "Powered by LangGraph + Nemotron"
+)
+
+
+# ============================================================
+# DISPLAY CHAT HISTORY
+# ============================================================
+
+for message in st.session_state["msg_hstry"]:
+
+    with st.chat_message(
+        message["role"]
+    ):
+
+        st.markdown(
+            message["content"]
+        )
+
+
+# ============================================================
+# CHAT INPUT
+# ============================================================
+
+ques = st.chat_input(
+    "Type your message..."
+)
+
+
+# ============================================================
+# PROCESS MESSAGE
+# ============================================================
+
+if ques:
+
+    # ========================================================
+    # IMPORTANT:
+    # ADD THREAD ONLY WHEN USER ACTUALLY SENDS A MESSAGE
+    # ========================================================
+
+    current_thread = (
+        st.session_state["thread_id"]
+    )
+
+    add_thread(
+        current_thread
+    )
+
+
+    # ========================================================
+    # SAVE USER MESSAGE TO SESSION
+    # ========================================================
+
+    st.session_state[
+        "msg_hstry"
+    ].append({
+
+        "role": "user",
+
+        "content": ques
+
+    })
+
+
+    # ========================================================
+    # DISPLAY USER MESSAGE
+    # ========================================================
+
+    with st.chat_message(
+        "user"
+    ):
+
+        st.markdown(
+            ques
+        )
+
+
+    # ========================================================
+    # LANGGRAPH CONFIG
+    # ========================================================
+
+    CONFIG = {
+
+        "configurable": {
+
+            "thread_id":
+                current_thread
+
+        },
+
+        "metadata": {
+
+            "thread_id":
+                current_thread
+
+        },
+
+        "run_name":
+            "chat_turn"
+    }
+
+
+    # ========================================================
+    # ASSISTANT
+    # ========================================================
+
+    with st.chat_message(
+        "assistant"
+    ):
+
+        # ----------------------------------------------------
+        # Reserve status position BEFORE response
+        # ----------------------------------------------------
+
+        status_placeholder = st.empty()
+
+        status_holder = {
+            "box": None
+        }
+
+
+        # ====================================================
+        # STREAM GENERATOR
+        # ====================================================
 
         def ai_only_stream():
+
             for message_chunk, metadata in workflow.stream(
-                {"messages": [HumanMessage(content=ques)]},
+
+                {
+                    "messages": [
+                        HumanMessage(content=ques)
+                    ]
+                },
+
                 config=CONFIG,
-                stream_mode="messages",
+
+                stream_mode="messages"
             ):
-                # Lazily create & update the SAME status container when any tool runs
-                if isinstance(message_chunk, ToolMessage):
-                    tool_name = getattr(message_chunk, "name", "tool")
+
+                # ====================================================
+                # TOOL
+                # ====================================================
+
+                if isinstance(
+                    message_chunk,
+                    ToolMessage
+                ):
+
+                    tool_name = getattr(
+                        message_chunk,
+                        "name",
+                        "tool"
+                    )
+
                     if status_holder["box"] is None:
-                        status_holder["box"] = st.status(
-                            f"🔧 Using `{tool_name}` …", expanded=True
-                        )
+
+                        with status_placeholder.container():
+
+                            status_holder["box"] = st.status(
+                                f"🔧 Using `{tool_name}`...",
+                                expanded=True
+                            )
+
                     else:
+
                         status_holder["box"].update(
-                            label=f"🔧 Using `{tool_name}` …",
+                            label=f"🔧 Using `{tool_name}`...",
                             state="running",
-                            expanded=True,
+                            expanded=True
                         )
 
-                # Stream ONLY assistant tokens
-                if isinstance(message_chunk, AIMessage):
+
+                # ====================================================
+                # AI
+                # ====================================================
+
+                if isinstance(
+                    message_chunk,
+                    AIMessage
+                ):
+
+                    # Ignore tool calls
+                    if message_chunk.tool_calls:
+                        continue
+
+                    # Ignore empty messages
+                    if not message_chunk.content:
+                        continue
+
+                    # -----------------------------------------------
+                    # IMPORTANT
+                    # -----------------------------------------------
+                    # Don't display summary/title as chat response
+                    # -----------------------------------------------
+
+                    current_title = None
+
+                    try:
+
+                        current_state = workflow.get_state(
+                            CONFIG
+                        )
+
+                        current_title = (
+                            current_state.values.get(
+                                "summary"
+                            )
+                        )
+
+                    except Exception:
+                        pass
+
+
+                    if (
+                        current_title
+                        and
+                        message_chunk.content.strip()
+                        == str(current_title).strip()
+                    ):
+
+                        continue
+
+
                     yield message_chunk.content
 
-        ai_message = st.write_stream(ai_only_stream())
+        # ====================================================
+        # STREAM RESPONSE
+        # ====================================================
 
-        # Finalize only if a tool was actually used
+        ai_message = st.write_stream(
+            ai_only_stream()
+        )
+
+
+        # ====================================================
+        # COMPLETE TOOL STATUS
+        # ====================================================
+
         if status_holder["box"] is not None:
-            status_holder["box"].update(
-                label="✅ Tool finished", state="complete", expanded=False
+
+            status_holder[
+                "box"
+            ].update(
+
+                label="✅ Tool finished",
+
+                state="complete",
+
+                expanded=False
+
             )
 
-    # Save assistant message
-    st.session_state["msg_hstry"].append(
-        {"role": "assistant", "content": ai_message}
-    )
+
+    # ========================================================
+    # SAVE ASSISTANT RESPONSE
+    # ========================================================
+
+    st.session_state[
+        "msg_hstry"
+    ].append({
+
+        "role":
+            "assistant",
+
+        "content":
+            ai_message
+
+    })
