@@ -1,62 +1,112 @@
-from langchain_openai import ChatOpenAI
-from typing import TypedDict,Literal,Annotated 
-from langchain_ollama import ChatOllama
-from langchain_core.chat_history import BaseChatMessageHistory
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import BaseMessage,AIMessage,HumanMessage,SystemMessage
+from typing import TypedDict, Annotated
+import sqlite3
+import os
 import requests
-from langchain_openrouter  import ChatOpenRouter
-from langchain_core.messages import ToolMessage
-from langchain_community.tools import tool
-from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_openrouter import ChatOpenRouter
+from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+
+from langchain_ollama import ChatOllama
+from langchain_core.messages import (
+    BaseMessage,
+    AIMessage,
+    HumanMessage,
+)
+from langchain_core.tools import tool
+
 from langchain_community.tools import DuckDuckGoSearchRun
-from langgraph.checkpoint.memory import InMemorySaver
+
+from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import StateGraph, START, END, add_messages
-from dotenv import load_dotenv
-import sqlite3
-import os 
+
+
 load_dotenv()
-# llm = ChatOpenAI()
-# llm = ChatOllama(model ='nemotron-3-super:cloud')
-# llm2 = ChatOllama(model ='nemotron-3-super:cloud',temperature=1)
-llm = ChatOpenRouter(model ='nemotron-nano-9b-v2:free',temperature=.4,api_key=os.environ['OPENROUTER_API_KEY'])
-llm2 = ChatOpenRouter(model ="openai/gpt-oss-20b:free",temperature=1,api_key=os.environ['OPENROUTER_API_KEY'])
 
-# llm = ChatOpenAI(model ='gpt-5.4-nano',temperature=.4)
-# llm2 = ChatOpenAI(model ='gpt-5.4-nano',temperature=1)
 
-# memory = InMemorySaver()
-connection = sqlite3.connect(database='Chatbot.db',check_same_thread=False)
+# ============================================================
+# LLM
+# ============================================================
+
+# llm = ChatOllama(
+#     model="nemotron-3-super:cloud"
+# )
+
+# llm2 = ChatOllama(
+#     model="nemotron-3-super:cloud",
+#     temperature=1
+# )
+llm = ChatOpenRouter(
+    model="nemotron-nano-9b-v2:free",
+    api_key=os.environ['OPENROUTER_API_KEY']
+)
+
+llm2 = ChatOpenAI(
+    model="gpt-5-nano",
+    temperature=1,
+)
+
+
+# ============================================================
+# DATABASE / MEMORY
+# ============================================================
+
+connection = sqlite3.connect(
+    database="Chatbot.db",
+    check_same_thread=False
+)
 
 memory = SqliteSaver(conn=connection)
 
-class chat(TypedDict):
+
+# ============================================================
+# STATE
+# ============================================================
+
+class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
-    summary : str | None
+    summary: str | None
 
 
-search_tool = DuckDuckGoSearchRun(region='us-en')
+# ============================================================
+# TOOLS
+# ============================================================
+
+search_tool = DuckDuckGoSearchRun(region="us-en")
+
+
 @tool
 def get_weather_data(city: str) -> str:
     """
     Fetches the current weather of a city.
     """
+
     url = (
         f"https://api.weatherstack.com/current"
-        f"?access_key={os.environ['WEATHER_API']}&query={city}"
+        f"?access_key={os.environ['WEATHER_API']}"
+        f"&query={city}"
     )
 
     response = requests.get(url)
 
     return response.text
+
+
 @tool
-def calculator(first_num:float,second_num:float,operation:str)-> dict:
+def calculator(
+    first_num: float,
+    second_num: float,
+    operation: str
+) -> dict:
     """
-    Perform basic arithematic operations like addition, subtraction, multiplication, division.
-    Supported operation: add, sub, mul, div
+    Perform basic arithmetic operations.
+
+    Supported operations:
+    add, sub, mul, div
     """
+
     try:
+
         if operation == "add":
             result = first_num + second_num
 
@@ -67,13 +117,18 @@ def calculator(first_num:float,second_num:float,operation:str)-> dict:
             result = first_num * second_num
 
         elif operation == "div":
+
             if second_num == 0:
-                return {"error": "Division by zero is not allowed"}
+                return {
+                    "error": "Division by zero is not allowed"
+                }
 
             result = first_num / second_num
 
         else:
-            return {"error": f"Unsupported operation '{operation}'"}
+            return {
+                "error": f"Unsupported operation '{operation}'"
+            }
 
         return {
             "first_num": first_num,
@@ -81,70 +136,185 @@ def calculator(first_num:float,second_num:float,operation:str)-> dict:
             "operation": operation,
             "result": result
         }
+
     except Exception as e:
-        return {'error':str(e)}
-@tool 
+
+        return {
+            "error": str(e)
+        }
+
+
+@tool
 def get_stock_price(symbol: str) -> dict:
     """
-    Fetch latest stock price of companies 
+    Fetch latest stock price of a company.
     """
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={symbol}&apikey={os.environ['STOCK_API']}"
-    x = requests.get(url)
-    print("I'm nvidia")
-    return x.json()
 
-tools = [get_stock_price, search_tool, calculator,get_weather_data]
+    url = (
+        "https://www.alphavantage.co/query"
+        f"?function=TIME_SERIES_DAILY"
+        f"&symbol={symbol}"
+        f"&apikey={os.environ['STOCK_API']}"
+    )
+
+    response = requests.get(url)
+
+    return response.json()
+
+
+# ============================================================
+# TOOL LIST
+# ============================================================
+
+tools = [
+    get_stock_price,
+    search_tool,
+    calculator,
+    get_weather_data
+]
+
 
 llm_with_tools = llm.bind_tools(tools)
+
 tool_node = ToolNode(tools)
 
-def response(state: chat):
-    # print('calling response.......')
-    messages = state['messages']
-    response =llm_with_tools.invoke(messages)
-    # print(response.content)
-    return {'messages': response}
 
-def generate_summary(state:chat):
-    # print('First Execution.....')
-    messages = state['messages']
-    prompt = "You are a helpful AI bot.Here the user starting a chat you have to create a small title for for new chat thread.her is the user input.\n" \
-        f"{messages}"
-    summ = llm2.invoke(prompt)
-    return {'summary':summ}
+# ============================================================
+# RESPONSE NODE
+# ============================================================
 
-def condition_forSum(state):
-    if state.get('summary') is not None:
-        return END
+def response(state: ChatState):
+
+    messages = state["messages"]
+
+    response_message = llm_with_tools.invoke(messages)
+
+    return {
+        "messages": response_message
+    }
+
+
+# ============================================================
+# SUMMARY NODE
+# ============================================================
+
+def generate_summary(state: ChatState):
+
+    messages = state["messages"]
+
+    for message in messages:
+
+        if isinstance(message, HumanMessage):
+
+            text = message.content.strip()
+
+            words = text.split()
+
+            if len(words) > 6:
+                title = " ".join(words[:6]) + "..."
+            else:
+                title = text
+
+            return {
+                "summary": title
+            }
+
+    return {
+        "summary": "New Chat"
+    }
+
+
+# ============================================================
+# SUMMARY CONDITION
+# ============================================================
+
+def condition_for_summary(state: ChatState):
+
+    if state.get("summary"):
+        return "response"
+
     return "summary"
 
-work= StateGraph(chat)
-work.add_node('response',response)
-work.add_node('summary',generate_summary)
-work.add_node('tools',tool_node)
-work.add_edge(START,'response')
+# ============================================================
+# GRAPH
+# ============================================================
+
+work = StateGraph(ChatState)
+
+work.add_node(
+    "response",
+    response
+)
+
+work.add_node(
+    "summary",
+    generate_summary
+)
+
+work.add_node(
+    "tools",
+    tool_node
+)
+
+
+# START
+work.add_conditional_edges(
+    START,
+    condition_for_summary,
+    {
+        "summary": "summary",
+        "response": "response"
+    }
+)
+
+
+# Summary → Response
+work.add_edge(
+    "summary",
+    "response"
+)
+
+
+# Response → Tool / END
 work.add_conditional_edges(
     "response",
     tools_condition,
     {
         "tools": "tools",
-        END: END,
-    },
+        END: END
+    }
 )
 
-work.add_edge("tools", "response")
-work.add_conditional_edges(START,condition_forSum,{'summary':'summary',END:END})
-work.add_edge('summary',END)
-work.add_edge('response',END)
 
-workflow = work.compile(checkpointer=memory)
+# Tool → Response
+work.add_edge(
+    "tools",
+    "response"
+)
+
+
+workflow = work.compile(
+    checkpointer=memory
+)
+
+
+# ============================================================
+# RETRIEVE ALL THREADS
+# ============================================================
 
 def retrieve_allThreads():
-    x = set()   
-    for i in memory.list(None):
-        # print(i.config['configurable']['thread_id'])
-        x.add(i.config['configurable']['thread_id'])
-    return list(x)
-# x = retrieve_allThreads()
-# for i in x:
-#     print(workflow.get_state(config={'configurable':{'thread_id':i}}))
+
+    threads = set()
+
+    for checkpoint in memory.list(None):
+
+        thread_id = (
+            checkpoint.config
+            .get("configurable", {})
+            .get("thread_id")
+        )
+
+        if thread_id:
+            threads.add(thread_id)
+
+    return list(threads)
