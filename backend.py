@@ -206,23 +206,22 @@ def generate_summary(state: ChatState):
 
         if isinstance(message, HumanMessage):
 
-            text = message.content.strip()
+            prompt = (
+                "Create a short title for this conversation "
+                "based on the user's message. "
+                "Return ONLY the title, nothing else.\n\n"
+                f"User message: {message.content}"
+            )
 
-            words = text.split()
-
-            if len(words) > 6:
-                title = " ".join(words[:6]) + "..."
-            else:
-                title = text
+            result = llm2.invoke(prompt)
 
             return {
-                "summary": title
+                "summary": result.content.strip()
             }
 
     return {
         "summary": "New Chat"
     }
-
 
 # ============================================================
 # SUMMARY CONDITION
