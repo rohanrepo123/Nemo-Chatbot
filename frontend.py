@@ -19,7 +19,7 @@ from backend import (
 # ============================================================
 
 st.set_page_config(
-    page_title="ChatGPT",
+    page_title="NemoBot",
     page_icon="🤖",
     layout="wide"
 )
